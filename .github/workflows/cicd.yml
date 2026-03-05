@@ -1,0 +1,45 @@
+name: Flask CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ######################################
+  # JOB 1: Run tests (CI)
+  ######################################
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Pull down the code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Install Python 3.12
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Step 3: Cache pip packages (speeds up repeat runs)
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      # Step 4: Install dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Step 5: Lint with flake8
+      - name: Lint with flake8
+        run: flake8 app.py --max-line-length=100
+
+      # Step 6: Run tests with pytest
+      - name: Run tests
+        run: pytest test_app.py -v
