@@ -1,13 +1,57 @@
+name: Flask CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  ######################################
+  # JOB 1: Run tests (CI)
+  ######################################
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint with flake8
+        run: flake8 app.py --max-line-length=100
+
+      - name: Run tests
+        run: pytest test_app.py -v
+
+
+  ######################################
+  # JOB 2: Build & Push Docker Image
+  ######################################
   build-and-push:
     name: Build & Push to ECR
     runs-on: ubuntu-latest
-    needs: [test]                     # Only runs if tests pass
-    if: github.ref == 'refs/heads/main'  # Only on pushes to main
+    needs: [test]
+    if: github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
 
-      # Configure AWS credentials from GitHub Secrets
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -15,20 +59,19 @@
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
 
-      # Login to ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Build and push the Docker image
       - name: Build, tag, and push image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG:    ${{ github.sha }}     # Unique tag per commit
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/flask-api:$IMAGE_TAG .
-          docker push  $ECR_REGISTRY/flask-api:$IMAGE_TAG
-          # Also tag as "latest" for easy pulling
-          docker tag  $ECR_REGISTRY/flask-api:$IMAGE_TAG \
-                      $ECR_REGISTRY/flask-api:latest
+          docker push $ECR_REGISTRY/flask-api:$IMAGE_TAG
+
+          docker tag $ECR_REGISTRY/flask-api:$IMAGE_TAG \
+                     $ECR_REGISTRY/flask-api:latest
+
           docker push $ECR_REGISTRY/flask-api:latest
