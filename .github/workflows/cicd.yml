@@ -78,15 +78,16 @@ jobs:
 
 
   ######################################
-  # JOB 3: Deploy to EC2
+  # JOB 3: Deploy to STAGING
   ######################################
-  deploy:
-    name: Deploy to EC2
+  deploy-staging:
+    name: Deploy → Staging
     runs-on: ubuntu-latest
     needs: [build-and-push]
+    environment: staging
 
     steps:
-      - name: SSH into EC2 and deploy
+      - name: SSH into STAGING EC2 and deploy
         uses: appleboy/ssh-action@v1.0.3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -98,11 +99,55 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_REGION
           script: |
-            # Export the variables so the AWS CLI inside the EC2 session picks them up
+
             export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
             export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
             export AWS_DEFAULT_REGION=$AWS_REGION
-            
+
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+              | docker login --username AWS --password-stdin \
+                ${{ secrets.ECR_REGISTRY }}
+
+            docker pull ${{ secrets.ECR_REGISTRY }}/flask-api:latest
+
+            docker stop flask-api || true
+            docker rm flask-api || true
+
+            docker run -d \
+              --name flask-api \
+              --restart always \
+              -p 5000:5000 \
+              ${{ secrets.ECR_REGISTRY }}/flask-api:latest
+
+            sleep 5 && curl -f http://localhost:5000/health
+
+  ######################################
+  # JOB 4: Deploy to PRODUCTION
+  ######################################
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    environment: production
+
+    steps:
+      - name: SSH into PRODUCTION EC2 and deploy
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_REGION
+          script: |
+
+            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+            export AWS_DEFAULT_REGION=$AWS_REGION
+
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
               | docker login --username AWS --password-stdin \
                 ${{ secrets.ECR_REGISTRY }}
